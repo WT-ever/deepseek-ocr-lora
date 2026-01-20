@@ -1,0 +1,15 @@
+torch
+torchvision
+torchaudio
+unsloth[colab-new] @ git+https://github.com/unslothai/unsloth.git
+transformers==4.56.2
+trl==0.22.2
+jiwer
+einops
+addict
+easydict
+sentencepiece
+protobuf
+datasets
+huggingface_hub
+hf_transfer
