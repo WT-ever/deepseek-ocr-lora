@@ -1,8 +1,6 @@
 import os
 # 1. 优先设置镜像站环境变量（必须放在所有 huggingface 相关 import 之前）
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-# 2. 如果是 Unsloth，建议也加上这个（双重保险）
-os.environ['UNSLOTH_USE_MODELSCOPE'] = '1'
 
 # 从 Hugging Face 镜像站下载完整的DeepSeek OCR模型文件夹
 from huggingface_hub import snapshot_download
@@ -14,7 +12,7 @@ import torch
 from transformers import AutoModel
 from datasets import load_dataset
 import os
-import datacollator
+from datacollator import DeepSeekOCRDataCollator
 
 os.environ["UNSLOTH_WARN_UNINITIALIZED"] = '0'
 # 4bit pre quantized models we support for 4x faster downloading + no OOMs.
