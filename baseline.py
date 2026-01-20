@@ -1,4 +1,6 @@
 # 从 Hugging Face 镜像站下载完整的DeepSeek OCR模型文件夹
+import os
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 from huggingface_hub import snapshot_download
 snapshot_download("unsloth/DeepSeek-OCR", local_dir = "deepseek_ocr")
 

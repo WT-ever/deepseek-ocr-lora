@@ -1,3 +1,9 @@
+import os
+# 1. 优先设置镜像站环境变量（必须放在所有 huggingface 相关 import 之前）
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+# 2. 如果是 Unsloth，建议也加上这个（双重保险）
+os.environ['UNSLOTH_USE_MODELSCOPE'] = '1'
+
 # 从 Hugging Face 镜像站下载完整的DeepSeek OCR模型文件夹
 from huggingface_hub import snapshot_download
 snapshot_download("unsloth/DeepSeek-OCR", local_dir = "deepseek_ocr")
