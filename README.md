@@ -28,7 +28,8 @@
    **其余库依赖**
    
    ```
-   pip install -r requirements.txt
+   chmod +x ./install.sh    # 添加执行权限
+   ./install.sh             # 执行安装脚本
    ```
    
 2. Git 获取相关文件

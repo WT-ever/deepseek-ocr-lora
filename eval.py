@@ -1,3 +1,8 @@
+from unsloth import FastVisionModel # FastLanguageModel for LLMs
+import torch
+from transformers import AutoModel
+import os
+
 # True即执行微调后的模型，False即执行基线模型
 if True:
     from unsloth import FastVisionModel
