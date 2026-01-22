@@ -1,11 +1,20 @@
+import os
+# 1. 优先设置镜像站环境变量（必须放在所有 huggingface 相关 import 之前）
+os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+
 from unsloth import FastVisionModel # FastLanguageModel for LLMs
 import torch
 from transformers import AutoModel
-import os
+
+
+prompt = "<image>\nFree OCR. "
+image_file = 'your_image.jpg'
+output_path = 'result/eval'
 
 # True即执行微调后的模型，False即执行基线模型
 if True:
     from unsloth import FastVisionModel
+    prompt = "docparse"
     model, tokenizer = FastVisionModel.from_pretrained(
         model_name = "lora_model", # YOUR MODEL YOU USED FOR TRAINING
         load_in_4bit = False, # Use 4bit to reduce memory use. False for 16bit LoRA.
@@ -15,10 +24,6 @@ if True:
         use_gradient_checkpointing = "unsloth", # True or "unsloth" for long context
     )
     FastVisionModel.for_inference(model) # Enable for inference!
-
-prompt = "<image>\nFree OCR. "
-image_file = 'your_image.jpg'
-output_path = 'your/output/dir'
 
 # Tiny: base_size = 512, image_size = 512, crop_mode = False
 # Small: base_size = 640, image_size = 640, crop_mode = False

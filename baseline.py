@@ -30,7 +30,21 @@ model, tokenizer = FastVisionModel.from_pretrained(
 
 # 获取中文字符数据集
 from datasets import load_dataset
-dataset = load_dataset("priyank-m/chinese_text_recognition", split = "train[:2000]")
+# dataset = load_dataset("priyank-m/chinese_text_recognition", split = "train[:2000]")
+# --- 配置本地路径 ---
+JSONL_PATH = "your/path/datasets/label/train.jsonl"  # 你的 jsonl 文件路径
+IMAGE_FOLDER = "your/path/datasets/image/"    # 你的图片存放文件夹
+# Load dataset
+dataset = load_dataset("json", data_files=JSONL_PATH, split="train")
+
+# 拼接完整的图片路径
+img_path = os.path.join(IMAGE_FOLDER, dataset[10]['image'])
+
+try:
+    # 加载图片对象（DataCollator 需要 PIL 对象）
+    image = Image.open(img_path).convert("RGB")
+except Exception as e:
+    print(f"Error loading image {img_path}: {e}")
 
 dataset[10]['image'].save("your_image.jpg")
 
@@ -38,7 +52,7 @@ dataset[10]['image'].save("your_image.jpg")
 # prompt = "<image>\nFree OCR. "
 prompt = "<image>\nFree OCR. "
 image_file = 'your_image.jpg'
-output_path = 'your/output/dir'
+output_path = 'result/baseline'
 # infer(self, tokenizer, prompt='', image_file='', output_path = ' ', base_size = 1024, image_size = 640, crop_mode = True, test_compress = False, save_results = False):
 
 # Tiny: base_size = 512, image_size = 512, crop_mode = False

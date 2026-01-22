@@ -1,5 +1,5 @@
 import os
-# 1. 优先设置镜像站环境变量（必须放在所有 huggingface 相关 import 之前）
+# 优先设置镜像站环境变量（必须放在所有 huggingface 相关 import 之前）
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 
 # 从 Hugging Face 镜像站下载完整的DeepSeek OCR模型文件夹
@@ -13,6 +13,7 @@ from transformers import AutoModel
 from datasets import load_dataset
 import os
 from datacollator import DeepSeekOCRDataCollator
+from PIL import Image
 
 os.environ["UNSLOTH_WARN_UNINITIALIZED"] = '0'
 # 4bit pre quantized models we support for 4x faster downloading + no OOMs.
@@ -56,28 +57,46 @@ model = FastVisionModel.get_peft_model(
     # target_modules = "all-linear", # Optional now! Can specify a list if needed
 )
 
-instruction = "<image>\nFree OCR. "
+# instruction = "<image>\nFree OCR. "
 
 def convert_to_conversation(sample):
     """Convert dataset sample to conversation format"""
+
+    # 拼接完整的图片路径
+    img_path = os.path.join(IMAGE_FOLDER, sample['image'])
+
+    try:
+        # 加载图片对象（DataCollator 需要 PIL 对象）
+        image = Image.open(img_path).convert("RGB")
+    except Exception as e:
+        print(f"Error loading image {img_path}: {e}")
+        return None
+
     conversation = [
         {
             "role": "<|User|>",
-            "content": instruction,
+            "content": sample["prefix"],
             "images": [sample['image']]
         },
         {
             "role": "<|Assistant|>",
-            "content": sample["text"]
+            "content": sample["suffix"]
         },
     ]
     return {"messages": conversation}
 
-# Load dataset
-dataset = load_dataset("priyank-m/chinese_text_recognition", split = "train[:1000]")
-# dataset = dataset.rename_column("image_path", "image")
 
-converted_dataset = [convert_to_conversation(sample) for sample in dataset]
+# --- 配置本地路径 ---
+JSONL_PATH = "your/path/datasets/label/train.jsonl"  # 你的 jsonl 文件路径
+IMAGE_FOLDER = "your/path/datasets/image/"    # 你的图片存放文件夹
+# Load dataset
+dataset = load_dataset("json", data_files=JSONL_PATH, split="train")
+
+# 执行转换并过滤掉加载失败的数据
+converted_dataset = dataset.map(convert_to_conversation)
+converted_dataset = converted_dataset.filter(lambda x: x is not None)
+
+# converted_dataset = [convert_to_conversation(sample) for sample in dataset]
 converted_dataset[10] # 展示converted_dataset[10]
 
 
@@ -125,9 +144,10 @@ trainer_stats = trainer.train()
 
 
 # 简单测试微调后的效果
-prompt = "<image>\nFree OCR. "
+# prompt = "<image>\nFree OCR. "
+prompt = "docparse"
 image_file = 'your_image.jpg'
-output_path = 'your/output/dir'
+output_path = 'result/finetune'
 
 # Tiny: base_size = 512, image_size = 512, crop_mode = False
 # Small: base_size = 640, image_size = 640, crop_mode = False
