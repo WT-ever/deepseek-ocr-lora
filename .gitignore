@@ -1,1 +1,9 @@
-.idea
+.idea/
+datasets/
+unsloth_compiled_cache/
+__pycache__/
+*.jpg
+outputs/
+lora_model/
+deepseek_ocr/
+result/

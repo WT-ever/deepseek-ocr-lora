@@ -1,6 +1,8 @@
 import os
 # 优先设置镜像站环境变量（必须放在所有 huggingface 相关 import 之前）
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+os.environ["HF_HUB_OFFLINE"] = "1"        # 强制 Hugging Face 进入离线模式
+os.environ["TRANSFORMERS_OFFLINE"] = "1"  # 强制 Transformers 进入离线模式
 
 # 从 Hugging Face 镜像站下载完整的DeepSeek OCR模型文件夹
 from huggingface_hub import snapshot_download
@@ -60,35 +62,25 @@ model = FastVisionModel.get_peft_model(
 # instruction = "<image>\nFree OCR. "
 
 def convert_to_conversation(sample):
-    """Convert dataset sample to conversation format"""
+    return {
+        "messages": [
+            {
+                "role": "<|User|>",
+                "content": "<image>\n" + sample["prefix"],
+                "images": [os.path.join(IMAGE_FOLDER, sample["image"])],
+            },
+            {
+                "role": "<|Assistant|>",
+                "content": sample["suffix"],
+            },
+        ]
+    }
 
-    # 拼接完整的图片路径
-    img_path = os.path.join(IMAGE_FOLDER, sample['image'])
-
-    try:
-        # 加载图片对象（DataCollator 需要 PIL 对象）
-        image = Image.open(img_path).convert("RGB")
-    except Exception as e:
-        print(f"Error loading image {img_path}: {e}")
-        return None
-
-    conversation = [
-        {
-            "role": "<|User|>",
-            "content": sample["prefix"],
-            "images": [sample['image']]
-        },
-        {
-            "role": "<|Assistant|>",
-            "content": sample["suffix"]
-        },
-    ]
-    return {"messages": conversation}
 
 
 # --- 配置本地路径 ---
-JSONL_PATH = "your/path/datasets/label/train.jsonl"  # 你的 jsonl 文件路径
-IMAGE_FOLDER = "your/path/datasets/image/"    # 你的图片存放文件夹
+JSONL_PATH = "./datasets/label/train.jsonl"  # 你的 jsonl 文件路径
+IMAGE_FOLDER = "./datasets/image/train"    # 你的图片存放文件夹
 # Load dataset
 dataset = load_dataset("json", data_files=JSONL_PATH, split="train")
 
@@ -118,8 +110,8 @@ trainer = Trainer(
     data_collator = data_collator, # Must use!
     train_dataset = converted_dataset,
     args = TrainingArguments(
-        per_device_train_batch_size = 2,
-        gradient_accumulation_steps = 4,
+        per_device_train_batch_size = 1,
+        gradient_accumulation_steps = 8,
         warmup_steps = 5,
         max_steps = 60,
         # num_train_epochs = 1, # Set this instead of max_steps for full training runs

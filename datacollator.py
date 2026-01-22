@@ -68,13 +68,18 @@ class DeepSeekOCRDataCollator:
             print(f"Warning: tokenizer has no bos_token_id, using default: {self.bos_id}")
 
     def deserialize_image(self, image_data) -> Image.Image:
-        """Convert image data (bytes dict or PIL Image) to PIL Image in RGB mode"""
         if isinstance(image_data, Image.Image):
             return image_data.convert("RGB")
+
+        elif isinstance(image_data, str):
+            image = Image.open(image_data)
+            return image.convert("RGB")
+
         elif isinstance(image_data, dict) and 'bytes' in image_data:
             image_bytes = image_data['bytes']
             image = Image.open(io.BytesIO(image_bytes))
             return image.convert("RGB")
+
         else:
             raise ValueError(f"Unsupported image format: {type(image_data)}")
 
