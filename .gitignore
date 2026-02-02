@@ -7,3 +7,4 @@ outputs/
 lora_model/
 deepseek_ocr/
 result/
+log/
