@@ -79,8 +79,8 @@ def convert_to_conversation(sample):
 
 
 # --- 配置本地路径 ---
-JSONL_PATH = "./datasets/label/train.jsonl"  # 你的 jsonl 文件路径
-IMAGE_FOLDER = "./datasets/image/train"    # 你的图片存放文件夹
+JSONL_PATH = "/root/autodl-tmp/datasets/label/train.jsonl"  # 你的 jsonl 文件路径
+IMAGE_FOLDER = "/root/autodl-tmp/datasets/image/train"    # 你的图片存放文件夹
 # Load dataset
 dataset = load_dataset("json", data_files=JSONL_PATH, split="train")
 

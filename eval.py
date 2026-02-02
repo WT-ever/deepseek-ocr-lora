@@ -43,4 +43,5 @@ res = model.infer(
     test_compress=False,
 )
 
+print(f"res的值为{res}")
 print("Inference done.")
