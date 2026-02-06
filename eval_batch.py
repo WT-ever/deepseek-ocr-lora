@@ -1,11 +1,13 @@
 import os
+import sys
 import json
 import signal
 from PIL import Image
 from tqdm import tqdm
 import glob
-import time
 from contextlib import contextmanager
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
 os.environ["UNSLOTH_WARN_UNINITIALIZED"] = "0"
@@ -22,42 +24,26 @@ IMAGE_DIR = "/root/autodl-tmp/datasets/image/eval"
 OUTPUT_PATH = "./result/eval"
 OUTPUT_FILE = os.path.join(OUTPUT_PATH, "results.jsonl")
 PROMPT = "<image>\ndocparse"
+TIMEOUT_SECONDS = 120
 
 SUPPORTED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp']
-TIMEOUT_SECONDS = 120
-SAVE_INTERVAL = 10
 
 
 class TimeoutException(Exception):
     pass
 
 
-def timeout_handler(signum, frame):
-    raise TimeoutException("操作超时")
-
-
 @contextmanager
 def time_limit(seconds):
-    signal.signal(signal.SIGALRM, timeout_handler)
+    def signal_handler(signum, frame):
+        raise TimeoutException("Timed out!")
+    
+    signal.signal(signal.SIGALRM, signal_handler)
     signal.alarm(seconds)
     try:
         yield
     finally:
         signal.alarm(0)
-
-
-def get_memory_info():
-    if torch.cuda.is_available():
-        allocated = torch.cuda.memory_allocated() / 1024**3
-        reserved = torch.cuda.memory_reserved() / 1024**3
-        max_allocated = torch.cuda.max_memory_allocated() / 1024**3
-        return {
-            'allocated': allocated,
-            'reserved': reserved,
-            'max_allocated': max_allocated,
-            'total': torch.cuda.get_device_properties(0).total_memory / 1024**3
-        }
-    return None
 
 
 def load_model():
@@ -87,7 +73,6 @@ def get_image_files(image_dir):
 
 
 def process_single_image(model, tokenizer, image_path, temp_image_file="temp_inference.jpg"):
-    start_time = time.time()
     try:
         with time_limit(TIMEOUT_SECONDS):
             image = Image.open(image_path).convert("RGB")
@@ -106,40 +91,29 @@ def process_single_image(model, tokenizer, image_path, temp_image_file="temp_inf
                 eval_mode=True
             )
             
-            elapsed_time = time.time() - start_time
-            print(f"  处理耗时: {elapsed_time:.2f}秒")
-            
-            mem_info = get_memory_info()
-            if mem_info:
-                print(f"  显存: {mem_info['allocated']:.2f}GB / {mem_info['total']:.2f}GB ({mem_info['allocated']/mem_info['total']*100:.1f}%)")
-            
             return res, token_stats
     except TimeoutException:
-        elapsed_time = time.time() - start_time
-        print(f"  处理超时 ({elapsed_time:.2f}秒)")
+        print(f"处理图片 {os.path.basename(image_path)} 超时 (超过{TIMEOUT_SECONDS}秒)")
         return None, None
     except Exception as e:
-        elapsed_time = time.time() - start_time
-        print(f"  处理失败 ({elapsed_time:.2f}秒): {e}")
+        print(f"处理图片 {os.path.basename(image_path)} 时出错: {e}")
         import traceback
         traceback.print_exc()
         return None, None
 
 
-def batch_inference(model, tokenizer, image_files, batch_size=1, output_file=OUTPUT_FILE):
+def batch_inference(model, tokenizer, image_files, batch_size=1, output_file=None, save_interval=10):
     results = []
     temp_image_file = "temp_inference.jpg"
-    failed_images = []
-    
-    print(f"\n开始批量推理，batch_size={batch_size}")
-    print(f"总图片数: {len(image_files)}")
+    processed_count = 0
+    total_saved = 0
+    first_save = True
     
     for i in tqdm(range(0, len(image_files), batch_size), desc="批量推理进度"):
         batch = image_files[i:i+batch_size]
         
         for image_path in batch:
             image_name = os.path.basename(image_path)
-            print(f"\n处理图片 {i+1}/{len(image_files)}: {image_name}")
             
             suffix, token_stats = process_single_image(model, tokenizer, image_path, temp_image_file)
             
@@ -151,36 +125,39 @@ def batch_inference(model, tokenizer, image_files, batch_size=1, output_file=OUT
                     "tokens": f"{token_stats['image_tokens']}:{token_stats['text_tokens']}:{token_stats['total_tokens']}"
                 }
                 results.append(result)
-                print(f"✓ 已处理: {image_name}")
+                processed_count += 1
+                print(f"✓ 已处理: {image_name} (累计: {processed_count})")
             else:
                 print(f"✗ 处理失败: {image_name}")
-                failed_images.append(image_name)
         
         torch.cuda.empty_cache()
         
-        if (i // batch_size + 1) % SAVE_INTERVAL == 0:
-            print(f"\n已处理 {len(results)} 张图片，保存中间结果...")
-            save_results(results, output_file)
+        if output_file and len(results) >= save_interval:
+            save_results(results[:save_interval], output_file, append=not first_save)
+            total_saved += len(results[:save_interval])
+            results = results[save_interval:]
+            first_save = False
     
-    if failed_images:
-        print(f"\n失败的图片 ({len(failed_images)}张):")
-        for img in failed_images[:10]:
-            print(f"  - {img}")
-        if len(failed_images) > 10:
-            print(f"  ... 还有 {len(failed_images) - 10} 张")
-    
-    return results
+    if results:
+        if output_file:
+            save_results(results, output_file, append=not first_save)
+            total_saved += len(results)
+        return results, total_saved
+    else:
+        return [], total_saved
 
 
-def save_results(results, output_file):
+def save_results(results, output_file, append=False):
     os.makedirs(os.path.dirname(output_file), exist_ok=True)
     
-    with open(output_file, 'w', encoding='utf-8') as f:
+    mode = 'a' if append else 'w'
+    with open(output_file, mode, encoding='utf-8') as f:
         for result in results:
             f.write(json.dumps(result, ensure_ascii=False) + '\n')
     
-    print(f"\n结果已保存到: {output_file}")
-    print(f"总共处理: {len(results)} 张图片")
+    if not append:
+        print(f"\n结果已保存到: {output_file}")
+    print(f"已保存 {len(results)} 条记录到: {output_file}")
 
 
 def main():
@@ -197,24 +174,14 @@ def main():
         print("错误: 没有找到图片文件!")
         return
     
-    print(f"GPU信息: {torch.cuda.get_device_name(0)}")
-    print(f"显存总量: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f}GB")
+    # 只处理前20张图片
+    # image_files = image_files[:10]
+    print(f"本次处理前 {len(image_files)} 张图片")
     
-    # infer函数只支持单张图片，所以batch_size固定为1
-    batch_size = 1
-    print(f"使用batch_size={batch_size}")
+    results, total_saved = batch_inference(model, tokenizer, image_files, batch_size=1, output_file=OUTPUT_FILE, save_interval=10)
     
-    # 可以在这里设置处理所有图片或部分图片
-    # image_files = image_files[:20]  # 只处理前20张
-    print(f"本次处理全部 {len(image_files)} 张图片")
-    
-    results = batch_inference(model, tokenizer, image_files, batch_size=batch_size, output_file=OUTPUT_FILE)
-    
-    save_results(results, OUTPUT_FILE)
-    
-    print("\n批量推理完成!")
-    print(f"成功处理: {len(results)} 张图片")
-    print(f"失败: {len(image_files) - len(results)} 张图片")
+    print(f"\n批量推理完成!")
+    print(f"总共成功处理并保存: {total_saved} 张图片")
 
 
 if __name__ == "__main__":

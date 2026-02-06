@@ -28,6 +28,11 @@ from .conversation import get_conv_template
 
 torch_dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
 
+decoder_token_count = 0
+decoder_token_count_recorded = False
+eval_mode_global = False
+inference_timeout_seconds = 120
+
 def load_image(image_path):
 
     try:
@@ -451,10 +456,12 @@ class DeepseekOCRModel(DeepseekV2Model):
                         global_features = torch.cat((global_features_2[:, 1:], global_features_1.flatten(2).permute(0, 2, 1)), dim=-1) 
                         global_features = self.projector(global_features)
 
-                        print('=====================')
-                        print('BASE: ', global_features.shape)
-                        print('PATCHES: ', local_features.shape)
-                        print('=====================')
+                        global eval_mode_global
+                        if not eval_mode_global:
+                            print('=====================')
+                            print('BASE: ', global_features.shape)
+                            print('PATCHES: ', local_features.shape)
+                            print('=====================')
 
                         _, hw, n_dim = global_features.shape
                         h = w = int(hw ** 0.5)
@@ -521,6 +528,11 @@ class DeepseekOCRModel(DeepseekV2Model):
                     inputs_embeds[idx] = updated_row
 
                 idx += 1
+        
+        global decoder_token_count, decoder_token_count_recorded
+        if not decoder_token_count_recorded and input_ids is not None and input_ids.shape[1] > 1:
+            decoder_token_count = inputs_embeds.shape[1]
+            decoder_token_count_recorded = True
             
         return super(DeepseekOCRModel, self).forward(
             input_ids=None, attention_mask=attention_mask, past_key_values=past_key_values,
@@ -710,6 +722,10 @@ class DeepseekOCRForCausalLM(DeepseekV2ForCausalLM):
 
 
     def infer(self, tokenizer, prompt='', image_file='', output_path = '', base_size=1024, image_size=640, crop_mode=True, test_compress=False, save_results=False, eval_mode=False):
+        global eval_mode_global, decoder_token_count_recorded
+        eval_mode_global = eval_mode
+        decoder_token_count_recorded = False
+        
         self.disable_torch_init()
 
         os.makedirs(output_path, exist_ok=True)
@@ -899,6 +915,11 @@ class DeepseekOCRForCausalLM(DeepseekV2ForCausalLM):
 
         images_seq_mask = torch.tensor(images_seq_mask, dtype=torch.bool)
 
+        if not eval_mode:
+            print(f"输入到decoder的总token数量: {len(tokenized_str)}")
+            print(f"其中文本token数量: {len([x for x in images_seq_mask if not x])}")
+            print(f"其中图像token数量: {len([x for x in images_seq_mask if x])}")
+
 
         if len(images_list) == 0:
             images_ori = torch.zeros((1, 3, image_size, image_size))
@@ -957,10 +978,15 @@ class DeepseekOCRForCausalLM(DeepseekV2ForCausalLM):
                 stop_str = '<｜end▁of▁sentence｜>'
                 if outputs.endswith(stop_str):
                     outputs = outputs[:-len(stop_str)]
-                # re_match
+                
+                global decoder_token_count
+                token_stats = {
+                    'total_tokens': decoder_token_count,
+                    'image_tokens': len([x for x in images_seq_mask if x]),
+                    'text_tokens': len([x for x in images_seq_mask if not x])
+                }
                 outputs = outputs.strip()
-
-                return outputs
+                return outputs, token_stats
         
         if '<image>' in conversation[0]['content'] and test_compress:
             outputs = tokenizer.decode(output_ids[0, input_ids.unsqueeze(0).cuda().shape[1]:])
